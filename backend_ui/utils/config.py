@@ -21,3 +21,5 @@ QDRANT_PORT = env_config.get("qdrant", "QDRANT_PORT")
 QDRANT_URL = env_config.get("qdrant", "QDRANT_URL")
 QDRANT_LOCAL_PATH = os.path.join(ROOT_PATH, "qdrant_collections")
 
+OPENAI_API_KEY = env_config.get("openai", "OPENAI_API_KEY")
+SERAPI_API_KEY = env_config.get("serapi", "SERAPI_API_KEY")

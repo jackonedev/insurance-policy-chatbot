@@ -1,5 +1,11 @@
 from functools import wraps
 
+from langchain.prompts.prompt import PromptTemplate
+from langchain_core.prompts.chat import ChatPromptTemplate
+from langchain_core.output_parsers.string import StrOutputParser
+
+from langchain.agents import tool
+from langchain_openai.chat_models import ChatOpenAI
 from langchain.tools.retriever import create_retriever_tool
 from langchain_community.utilities.serpapi import SerpAPIWrapper
 from langchain.agents import Tool
@@ -10,6 +16,12 @@ from ml_service.qdrant_vectorstore.vectorstore_funcs import (
     obtain_llm_multiquery_retriever,
     qdrant_retriever,
 )
+
+from utils.config import SERAPI_API_KEY, OPENAI_API_KEY
+from ml_service.prompts import rephrased_retriever_template
+
+
+
 
 
 # PDF TOOL RETRIEVER
@@ -28,18 +40,18 @@ def policy_feature_tool():
         search_kwargs=search_kwargs,
     )
 
-    init_tool = create_retriever_tool(
+    pol_tool = create_retriever_tool(
         retriever=pdf_retriever,
         description="Esquema. Estructura de polizas de seguros. Lista de los articulos.",
         name="policy_feature",
     )
 
-    return init_tool
+    return pol_tool
 
 
 def article_feature_tool():
     search_type = "mmr"
-    search_kwargs = {"k": 2, "lambda_mult": 0.25}
+    search_kwargs = {"k": 4, "lambda_mult": 0.2}
 
     embedding_name = "openai_embeddings"
     collection_name = "pdf_art_feature_openai_embeddings"
@@ -51,18 +63,21 @@ def article_feature_tool():
         search_kwargs=search_kwargs,
     )
 
-    pdf_tool = create_retriever_tool(
+    art_tool = create_retriever_tool(
         retriever=pdf_retriever,
-        description="Resumen. Introduccion de los articulos. Encabezado de los articulos.",
+        description="Encabezado de los articulos.",
         name="article_feature",
     )
 
-    return pdf_tool
+    return art_tool
 
 # PDR CONTENT TOOL
-
-def content_feature_tool():
-    search_type = "mmr"
+@tool
+def content_feature(user_input: str):
+    """Recibe la query del user y desarrollar explicaciones para un articulo en particular.
+    Funcion para hacer un resumen, buscar detalles de articulos de polizas."""
+    
+    search_type = "similarity"
     search_kwargs = {"k": 1}
 
     embedding_name = "openai_embeddings"
@@ -74,19 +89,31 @@ def content_feature_tool():
         search_type=search_type,
         search_kwargs=search_kwargs,
     )
+    
+    REPHRASED_RETRIEVER_PROMPT = PromptTemplate.from_template(rephrased_retriever_template)
+    
+    _llm = ChatOpenAI(temperature=0.0, model="gpt-3.5-turbo-0125", api_key=OPENAI_API_KEY)
+    
+    standalone_query = {
+            "input": lambda x: x
+        } | REPHRASED_RETRIEVER_PROMPT
+    
+    
+    
+    # import pickle, time
+    # res = standalone_query.invoke(user_input)
+    # save = (user_input, res)
+    # with open(f'save_{int(time.time())}.p', 'wb') as f:
+    #     pickle.dump(save, f)
 
-    pdf_tool = create_retriever_tool(
-        retriever=pdf_retriever,
-        description="Desarrollar explicaciones con informacion completa. Contenido de los articulos de las polizas.",
-        name="content_feature",
-    )
-
-    return pdf_tool
-
+    rephrase_chain = standalone_query | StrOutputParser() | pdf_retriever    
+    try:
+        return rephrase_chain.invoke(user_input)[0].page_content
+    except Exception as e:
+        return f"Calling tool with arguments:\n\n{user_input}\n\nraised the following error:\n\n{type(e)}: {e}"
+    
 
 # SERAPI TOOL
-
-
 def to_string(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -105,7 +132,7 @@ def web_news_tool():
     }
     search = SerpAPIWrapper(
         params=params,
-        serpapi_api_key="e03fb949db7815588cf61f04a2e9a88ba4698abc82d876ac6428c3728978f95e",
+        serpapi_api_key=SERAPI_API_KEY,
     )
 
     # Create the function for the tool
@@ -113,13 +140,13 @@ def web_news_tool():
     def dfunc(*args, **kwargs):
         return search.run(*args, **kwargs)
 
-    repl_tool = Tool(
+    news_tool = Tool(
         name="web_news",
         description="Noticias y novedades en internet y la web sobre empresas de seguros.",
         func=dfunc,
     )
 
-    return repl_tool
+    return news_tool
 
 
 def retriever_tool_constitucion_chile():

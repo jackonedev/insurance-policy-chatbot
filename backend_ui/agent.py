@@ -5,6 +5,7 @@ from langchain.agents import (
     AgentExecutor,
     Tool,
 )
+
 from langchain.agents.format_scratchpad.openai_functions import (
     format_to_openai_function_messages,
 )
@@ -23,7 +24,7 @@ from langchain_core.runnables import Runnable, RunnableLambda, RunnableParallel
 from langchain_core.tools import BaseTool
 
 from ml_service.agent_tools import (
-    content_feature_tool,
+    content_feature,
     policy_feature_tool,
     article_feature_tool,
     web_news_tool,
@@ -31,15 +32,16 @@ from ml_service.agent_tools import (
 )
 from ml_service.tools.embeddings import Embeddings
 
-content_tool = content_feature_tool()
+# content_tool = content_feature_tool()
 pol_tool = policy_feature_tool()
+art_tool = article_feature_tool()
 news_tool = web_news_tool()
 cl_constit_tool = retriever_tool_constitucion_chile()
 
 
 def create_agent():
     # TOOLS AND RETRIEVER TOOLS SET UP
-    ALL_TOOLS: List[BaseTool] = [content_tool, pol_tool, news_tool, cl_constit_tool]
+    ALL_TOOLS: List[BaseTool] = [pol_tool, content_feature, news_tool, cl_constit_tool]
 
     tool_docs = [
         Document(page_content=t.description, metadata={"index": i})
@@ -61,6 +63,11 @@ def create_agent():
         docs = retriever.get_relevant_documents(query)
         return [ALL_TOOLS[d.metadata["index"]] for d in docs]
 
+    from langchain.tools.render import render_text_description
+    
+    rendered_tools = render_text_description(ALL_TOOLS)
+
+
     # PROMPT SET UP
     assistant_system_message = """Eres un asistente asesor para una compañia de seguros.\
     Usa la tool 'policy_feature' para adquirir contexto básico de cada poliza.\
@@ -69,6 +76,14 @@ def create_agent():
     'cl_constit_tool' informacion legal respecto a las leyes de Chile.\
     Desarrollar la respuesta en formato bullet points.
     """
+    
+
+# Cadena de razonamiento: Si el input del usuario no sigue el siguiente formato, se debe ejecutar primero la tool `policy_feature` y luego `content_feature`.\
+# ```
+# POL320210210
+# SEGURO PARA PRESTACIONES MÉDICAS DE ALTO COSTO
+# ARTÍCULO 13º: SOLUCIÓN DE CONTROVERSIAS
+# ```
 
     prompt = ChatPromptTemplate.from_messages(
         [
